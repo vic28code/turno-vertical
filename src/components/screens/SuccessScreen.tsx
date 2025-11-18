@@ -1,6 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KioskLayout } from "@/components/KioskLayout";
+import supabase from "@/lib/supabase";
+
+// Si tienes un componente para mostrar el QR, úsalo aquí
+// import { QRCode } from "@/components/QRCode";
 
 interface SuccessScreenProps {
   turnNumber: string;
@@ -8,86 +12,125 @@ interface SuccessScreenProps {
   isRecovery?: boolean;
   category?: string;
   waitTime?: string;
+  turn?: any;
 }
 
 export const SuccessScreen = ({
   turnNumber,
   onFinish,
   isRecovery = false,
-  category = "Caja",
-  waitTime = "15 minutos",
+  category = "Caja 1",
+  waitTime = "2 horas, 5 minutos",
+  turn,
 }: SuccessScreenProps) => {
+  const [categoryName, setCategoryName] = useState<string>(category);
+  const [waitTimeLocal, setWaitTimeLocal] = useState<string>(waitTime);
+  const [clienteNombre, setClienteNombre] = useState<string | undefined>(turn?.cliente_nombre);
+
+  // Si tienes un campo para la naturaleza del turno, úsalo. Aquí fijo como "Turno Regular".
+  const naturaleza = turn?.naturaleza ?? "Turno Regular";
+  const displayedTurnNumber = turn?.numero ?? turnNumber;
+  const horaEmision =
+    turn?.fecha_creacion
+      ? new Date(turn.fecha_creacion).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+      : new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const fechaEmision =
+    turn?.fecha_creacion
+      ? new Date(turn.fecha_creacion).toLocaleDateString("es-ES")
+      : new Date().toLocaleDateString("es-ES");
+
+  // Enlace dinámico para el turno, reemplaza por tu dominio y el formato de número real
+  const consultaUrl = `https://www.sacodeturnero.com/consulta-turno-${displayedTurnNumber}`;
+
+  useEffect(() => {
+    // Si recibimos la info completa de la BD, la mostramos
+    const loadCategory = async () => {
+      try {
+        if (turn && turn.categoria_id) {
+          const { data, error } = await supabase
+            .from("categorias")
+            .select("nombre,tiempo_estimado")
+            .eq("id", turn.categoria_id)
+            .single();
+          if (!error && data) {
+            setCategoryName(data.nombre || category);
+            if (data.tiempo_estimado) setWaitTimeLocal(`${data.tiempo_estimado} minutos`);
+          }
+        }
+        if (turn && turn.cliente_nombre) {
+          setClienteNombre(turn.cliente_nombre);
+        }
+      } catch (err) {
+        console.error("Error cargando categoría para SuccessScreen:", err);
+      }
+    };
+    loadCategory();
+  }, [turn, category]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       onFinish();
     }, 10000);
-
     return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
     <KioskLayout showBack={false}>
-      <div className="text-center space-y-12">
+      <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-10">
+        {/* Éxito + mensaje */}
         <div>
-          <h1 className="text-6xl font-bold mb-4">
-            {isRecovery ? "RECUPERADO" : "ÉXITO"}
-          </h1>
-          {!isRecovery && (
-            <p className="text-xl text-muted-foreground bg-secondary px-8 py-4 rounded-2xl inline-block">
-              Su turno se ha generado correctamente,<br />revise su App
-            </p>
-          )}
-          {isRecovery && (
-            <p className="text-xl text-muted-foreground bg-secondary px-8 py-4 rounded-2xl inline-block">
-              Su turno se ha recuperado<br />correctamente, revise por favor
-            </p>
-          )}
+          <h1 className="text-5xl font-bold mb-2">{isRecovery ? "RECUPERADO" : "ÉXITO"}</h1>
+          <div className="bg-muted text-xl rounded-2xl py-3 px-8 mt-2 shadow">
+            Su turno se ha generado correctamente,<br />revise por favor
+          </div>
         </div>
 
-        <div className="bg-card p-12 rounded-3xl shadow-xl max-w-2xl mx-auto">
-          <h2 className="text-4xl font-bold mb-6">Su turno es:</h2>
-          <div className="text-8xl font-bold text-kiosk-primary mb-8">{turnNumber}</div>
+        {/* Turno principal */}
+        <div className="bg-card rounded-2xl shadow-lg py-8 px-4 max-w-lg w-full mb-2">
+          <div className="text-2xl font-medium mb-4">Su turno es:</div>
+          <div className="text-7xl font-bold text-kiosk-primary mb-6">{displayedTurnNumber}</div>
 
-          <div className="space-y-3 text-xl mb-8">
-            <p>
-              <span className="font-semibold">Nombre para:</span> {category}
-            </p>
-            <p>
-              <span className="font-semibold">Hora de solicitud:</span>{" "}
-              {new Date().toLocaleTimeString("es-ES", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-            <p>
-              <span className="font-semibold">Tiempo restante aproximado:</span>
+          <div className="flex flex-row justify-between text-lg mb-6">
+            <div className="text-left">
+              <div><span className="font-semibold">Turno para:</span> {categoryName}</div>
+              <div><span className="font-semibold">Fecha de emisión:</span> {fechaEmision}</div>
+              <div><span className="font-semibold">Hora de emisión:</span> {horaEmision}</div>
+              <div><span className="font-semibold">Naturaleza:</span> {naturaleza}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-semibold mb-2">Tiempo restante aproximado<br />para ser atendido:</div>
+              <span className="text-blue-700 font-bold">{waitTimeLocal}</span>
               <br />
-              {waitTime}
-            </p>
-            <p className="text-muted-foreground text-base">
-              <span className="font-semibold">Navegados:</span> Turno Pagados
-            </p>
-          </div>
-
-          <div className="mb-8">
-            <p className="text-lg mb-4">
-              Consulte el estado y tiempo aproximado<br />
-              de atención de su turno ingresando a
-            </p>
-            <div className="w-48 h-48 mx-auto bg-muted rounded-2xl flex items-center justify-center">
-              <div className="text-4xl font-bold">QR</div>
+              <span className="text-muted-foreground text-xs">(Basado en estimaciones promedio)</span>
             </div>
           </div>
 
-          <p className="text-base text-muted-foreground">
-            También puede consultar su turno ingresando a<br />
-            www.ejemplo.com.co/consulta-turno-12A18
-          </p>
+          {/* QR e instrucciones */}
+          <div className="my-5 text-center">
+            <div className="mb-3 text-base font-medium">
+              Consulte el estado y tiempo aproximado<br />
+              de atención de su turno escaneando este QR
+            </div>
+            <div className="flex items-center justify-center mb-3">
+              {/* Aquí deberías reemplazar por tu componente real de QR */}
+              <div className="bg-white rounded-lg shadow p-2">
+                {/* <QRCode value={consultaUrl} size={180} /> */}
+                <div className="w-40 h-40 bg-muted flex items-center justify-center rounded-lg">
+                  <span className="text-2xl text-muted-foreground">QR</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2 text-center text-base text-muted-foreground">
+            También puedes consultar tu turno ingresando a: <br />
+            <span className="text-red-700 font-medium">{consultaUrl}</span>
+          </div>
         </div>
 
         <Button
           onClick={onFinish}
-          className="kiosk-button bg-kiosk-primary hover:bg-kiosk-primary-hover text-primary-foreground"
+          className="w-48 h-12 text-lg font-semibold bg-muted text-black rounded-full shadow-lg mt-6"
         >
           Salir
         </Button>

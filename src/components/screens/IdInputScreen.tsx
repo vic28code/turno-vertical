@@ -20,6 +20,7 @@ export const IdInputScreen = ({
   useKeypad = false,
 }: IdInputScreenProps) => {
   const [idValue, setIdValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const handleNumberClick = (num: string) => {
     setIdValue((prev) => prev + num);
@@ -30,9 +31,13 @@ export const IdInputScreen = ({
   };
 
   const handleSubmit = () => {
-    if (idValue.trim()) {
-      onSubmit(idValue);
+    const cleaned = idValue.replace(/\D/g, "");
+    if (!/^\d{10}$/.test(cleaned)) {
+      setError("La cédula debe tener exactamente 10 números.");
+      return;
     }
+    setError(null);
+    onSubmit(cleaned);
   };
 
   return (
@@ -64,10 +69,14 @@ export const IdInputScreen = ({
             <NumericKeypad onNumberClick={handleNumberClick} onBackspace={handleBackspace} />
           ) : null}
 
+          {error ? (
+            <p className="text-sm text-destructive mt-2 text-center">{error}</p>
+          ) : null}
+
           <div className="text-center">
             <Button
               onClick={handleSubmit}
-              disabled={!idValue.trim()}
+              disabled={!/^\d{10}$/.test(idValue.replace(/\D/g, ""))}
               className="kiosk-button bg-kiosk-primary hover:bg-kiosk-primary-hover text-primary-foreground"
             >
               Solicitar

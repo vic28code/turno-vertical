@@ -16,34 +16,44 @@ export const WelcomeScreen = ({
   return (
     <KioskLayout showBack={false}>
       <div className="text-center space-y-12">
+        {/* --- AQUÍ SOLO VA LA IMAGEN DEL LOGO --- */}
         <div className="space-y-4">
-          <div className="w-32 h-32 mx-auto bg-muted rounded-full flex items-center justify-center">
-            <div className="text-sm text-muted-foreground">LOGO<br/>EMPRESA</div>
-          </div>
-          <h2 className="text-3xl font-semibold">{companyName}</h2>
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/9/92/Espol_Logo_2023.png"
+            alt={companyName}
+            className="h-24 mx-auto"
+            style={{ objectFit: "contain" }}
+          />
         </div>
 
         <div>
           <h1 className="kiosk-title">BIENVENID@</h1>
           <Hand className="w-24 h-24 mx-auto mb-8 text-kiosk-primary" />
-          <p className="kiosk-subtitle">Toque la pantalla para<br/>solicitar un turno</p>
         </div>
 
-        <div className="space-y-6">
+        <div className="flex justify-center gap-8 w-full max-w-2xl mx-auto">
           <Button
             onClick={onRequestTurn}
-            className="kiosk-button w-full bg-kiosk-primary hover:bg-kiosk-primary-hover text-primary-foreground"
+            className="kiosk-button flex flex-col items-center justify-center h-56 w-56 bg-kiosk-primary text-primary-foreground text-3xl font-bold rounded-2xl shadow-lg"
+            style={{ lineHeight: 1.1 }}
           >
-            SOLICITAR NUEVO TURNO
+            <span>SOLICITAR</span>
+            <span>NUEVO</span>
+            <span>TURNO</span>
           </Button>
-
           <Button
             onClick={onRecoverTurn}
-            className="kiosk-button w-full bg-kiosk-primary hover:bg-kiosk-primary-hover text-primary-foreground"
+            className="kiosk-button flex flex-col items-center justify-center h-56 w-56 bg-kiosk-primary text-primary-foreground text-3xl font-bold rounded-2xl shadow-lg"
+            style={{ lineHeight: 1.1 }}
           >
-            RECUPERAR TURNO PERDIDO
+            <span>RECUPERAR</span>
+            <span>TURNO</span>
+            <span>PERDIDO</span>
           </Button>
         </div>
+
+
+
       </div>
     </KioskLayout>
   );

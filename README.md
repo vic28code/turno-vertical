@@ -71,3 +71,24 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Supabase (Postgres)
+
+Si vas a usar Supabase como backend/Postgres, sigue estos pasos:
+
+- Añade las variables de entorno en un archivo `.env` (puedes copiar `.env.example`). Usa `VITE_SUPABASE_PROJECT_ID` y `VITE_SUPABASE_PUBLISHABLE_KEY` junto a `VITE_SUPABASE_URL`.
+- Instala la dependencia (`@supabase/supabase-js`) si no está instalada.
+
+Ejemplo mínimo de uso en el frontend:
+
+```ts
+// src/lib/supabase.ts
+import { supabase } from "./lib/supabase";
+
+// Obtener filas de ejemplo
+const { data, error } = await supabase.from('tu_tabla').select('*').limit(10);
+if (error) console.error(error);
+console.log(data);
+```
+
+Exportamos el cliente ya inicializado en `src/lib/supabase.ts` y lo importas donde lo necesites.
