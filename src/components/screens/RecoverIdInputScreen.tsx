@@ -2,18 +2,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KioskLayout } from "@/components/KioskLayout";
-import { NumericKeypad } from "@/components/NumericKeypad";
+import AlphanumericKeypad from "@/components/AlphanumericKeypad";
 
 interface RecoverIdInputScreenProps {
   onBack: () => void;
   onSubmit: (id: string) => void;
   useKeypad?: boolean;
+  error?: string | null;
 }
 
 export const RecoverIdInputScreen = ({
   onBack,
   onSubmit,
   useKeypad = false,
+  error = null,
 }: RecoverIdInputScreenProps) => {
   const [idValue, setIdValue] = useState("");
 
@@ -58,8 +60,15 @@ export const RecoverIdInputScreen = ({
           </div>
 
           {useKeypad && (
-            <NumericKeypad onNumberClick={handleNumberClick} onBackspace={handleBackspace} />
+            <AlphanumericKeypad
+              onKeyClick={(k: string) => setIdValue((v) => (v + k).slice(0, 16))}
+              onBackspace={handleBackspace}
+            />
           )}
+
+          {error ? (
+            <p className="text-sm text-destructive mt-2 text-center">{error}</p>
+          ) : null}
 
           <div className="text-center">
             <Button

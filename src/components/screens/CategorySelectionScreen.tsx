@@ -30,7 +30,29 @@ const addMinutes = (date: Date, mins: number) => {
   return copy.toISOString();
 };
 
-const nombres = ["Juan Pérez", "Ana Torres", "Pedro Gómez", "María Reyes"];
+const nombres = [
+  "Juan Pérez",
+  "Ana Torres",
+  "Pedro Gómez",
+  "María Reyes",
+  "Luis Fernández",
+  "Carmen Rodríguez",
+  "José Ramírez",
+  "Sofía Morales",
+  "Andrés Castillo",
+  "Laura Herrera",
+  "Miguel Vargas",
+  "Valentina López",
+  "Diego Cruz",
+  "Gabriela Mendoza",
+  "Ricardo Salazar",
+  "Isabella Torres",
+  "Carlos Navarro",
+  "Daniela Rojas",
+  "Fernando Ortiz",
+  "Lucía Castro",
+];
+
 
 export const CategorySelectionScreen = ({
   onBack,
@@ -150,11 +172,10 @@ export const CategorySelectionScreen = ({
               <button
                 key={category.id}
                 onClick={() => setSelected(category.id)}
-                className={`h-48 text-2xl font-bold rounded-xl shadow-md focus:outline-none p-4 ${
-                  isSelected
+                className={`h-48 text-2xl font-bold rounded-xl shadow-md focus:outline-none p-4 ${isSelected
                     ? "bg-kiosk-primary text-primary-foreground"
                     : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                }`}
+                  }`}
               >
                 {category.nombre}
               </button>

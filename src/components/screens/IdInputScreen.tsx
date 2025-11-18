@@ -10,6 +10,7 @@ interface IdInputScreenProps {
   title?: string;
   subtitle?: string;
   useKeypad?: boolean;
+  error?: string | null;
 }
 
 export const IdInputScreen = ({
@@ -18,6 +19,7 @@ export const IdInputScreen = ({
   title = "SOLICITUD DE NUEVO TURNO",
   subtitle = "Por favor, llene los campos adecuadamente",
   useKeypad = false,
+  error: propError = null,
 }: IdInputScreenProps) => {
   const [idValue, setIdValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +73,9 @@ export const IdInputScreen = ({
 
           {error ? (
             <p className="text-sm text-destructive mt-2 text-center">{error}</p>
+          ) : null}
+          {propError ? (
+            <p className="text-sm text-destructive mt-2 text-center">{propError}</p>
           ) : null}
 
           <div className="text-center">

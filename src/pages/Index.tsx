@@ -25,10 +25,13 @@ const Index = () => {
     clienteNombre?: string;
     turnObj?: any;
     stagedTurns?: any[];
+    recoveredTurn?: any;
   }>({});
 
   const [stagedTurns, setStagedTurns] = useState<any[]>([]);
   const [kioskoIds, setKioskoIds] = useState<number[]>([]);
+  const [recoverIdError, setRecoverIdError] = useState<string | null>(null);
+  const [recoverCedulaError, setRecoverCedulaError] = useState<string | null>(null);
 
   useEffect(() => {
     // Cargar los kiosko_id disponibles una vez al iniciar la app
@@ -71,10 +74,12 @@ const Index = () => {
     if (stagedTurns.length === 0) return;
 
     // Genera payloads dinámicamente
+    const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
     const payloads = stagedTurns.map((s) => {
       const kiosko_id = getRandomKioskoId() ?? 1;
-      const tiempo_espera = s.tiempo_estimado ?? 0;
-      const tiempo_atencion = Math.max(1, Math.floor((s.tiempo_estimado ?? 5) / 2));
+      // usar valores aleatorios entre 5 y 10 inclusive para ambos tiempos
+      const tiempo_espera = randomBetween(5, 10);
+      const tiempo_atencion = randomBetween(5, 10);
       const fecha_creacion = new Date().toISOString();
       return {
         // Elija sus valores según la estructura SQL
@@ -141,13 +146,54 @@ const Index = () => {
   };
 
   // Recuperación de turno por ID
-  const handleRecoverIdSubmit = (id: string) => {
-    setUserData({ ...userData, id });
-    setCurrentScreen("recover-turn");
+  const handleRecoverIdSubmit = async (id: string) => {
+    // Buscar el turno por su número en la columna `numero`
+    setRecoverIdError(null);
+    try {
+      const { data, error } = await supabase.from("turnos").select("*").eq("numero", id).single();
+      if (error || !data) {
+        setRecoverIdError("No se encontró un turno con ese ID.");
+        return;
+      }
+      if (data.estado !== "perdido") {
+        setRecoverIdError("El turno no está marcado como 'perdido'. No se puede recuperar.");
+        return;
+      }
+
+      // Guardar el turno recuperable temporalmente en userData
+      setUserData({ ...userData, recoveredTurn: data });
+      setRecoverIdError(null);
+      setCurrentScreen("recover-turn");
+    } catch (err) {
+      console.error(err);
+      setRecoverIdError("Error buscando el turno. Intente nuevamente.");
+    }
   };
 
   const handleRecoverTurnSubmit = (turnId: string) => {
-    setUserData({ ...userData, turnNumber: turnId });
+    // Aquí `turnId` es en realidad la cédula ingresada en el paso de recuperación
+    setRecoverCedulaError(null);
+    const recovered = (userData as any).recoveredTurn;
+    if (!recovered) {
+      setRecoverCedulaError("No hay un turno seleccionado para recuperar.");
+      return;
+    }
+
+    const cleaned = turnId.replace(/\D/g, "");
+    if (cleaned !== String(recovered.cliente_identificacion)) {
+      setRecoverCedulaError("La cédula no coincide con la del turno.");
+      return;
+    }
+
+    // Coincide: navegar a pantalla de éxito (recovery) mostrando datos del turno
+    setUserData({
+      ...userData,
+      turnNumber: recovered.numero,
+      category: recovered.categoria_nombre ?? userData.category,
+      waitTime: recovered.tiempo_espera ? `${recovered.tiempo_espera} minutos` : userData.waitTime,
+      clienteNombre: recovered.cliente_nombre,
+      turnObj: recovered,
+    });
     setCurrentScreen("recover-success");
   };
 
@@ -204,7 +250,7 @@ const Index = () => {
         />
       )}
       {currentScreen === "recover-id" && (
-        <RecoverIdInputScreen onBack={handleBack} onSubmit={handleRecoverIdSubmit} useKeypad={true} />
+        <RecoverIdInputScreen onBack={handleBack} onSubmit={handleRecoverIdSubmit} useKeypad={true} error={recoverIdError} />
       )}
       {currentScreen === "recover-turn" && (
         <IdInputScreen
@@ -213,10 +259,12 @@ const Index = () => {
           title="RECUPERE SU TURNO"
           subtitle="Puedes recuperar un turno siempre y cuando cuentes con tu cédula configurada"
           useKeypad={true}
+          error={recoverCedulaError}
         />
       )}
       {currentScreen === "recover-success" && (
         <SuccessScreen
+          turn={userData.turnObj}
           turnNumber={userData.turnNumber || ""}
           onFinish={handleFinish}
           isRecovery={true}
