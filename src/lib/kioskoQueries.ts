@@ -131,44 +131,44 @@ export const getTurnoPerdido = async (codigoTurno: string) => {
 // --- QUERIES DE ESCRITURA (CREAR / ACTUALIZAR) ---
 
 export const createTurn = async (turnData: any) => {
-  // 1. GENERAMOS EL ID MANUALMENTE
-  // Esto es vital porque tu base de datos no tiene autogeneración de UUID
-  const newId = uuidv4();
+  console.log("🛠️ Iniciando creación de turno con datos:", turnData);
+
+  // 1. VALIDACIÓN PREVIA (Evita enviar basura a Supabase)
+  if (!turnData.cuenta_id) throw new Error("Falta cuenta_id");
+  if (!turnData.sucursal_id) throw new Error("Falta sucursal_id");
+  if (!turnData.kiosko_id) throw new Error("Falta kiosko_id");
+  if (!turnData.cliente_id) throw new Error("Falta cliente_id");
   
+  // 2. GENERAMOS EL ID
+  const newId = uuidv4();
   const now = new Date();
-  const expires = new Date(now.getTime() + 2 * 60 * 60 * 1000); 
+  const expires = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
-  // 2. Construimos el objeto insertPayload asegurando que 'id' va primero
+  // 3. Payload
   const insertPayload = {
-    id: newId, // <--- AQUÍ ESTÁ EL FIX: ID EXPLÍCITO
-
-    // Relaciones
+    id: newId,
     cuenta_id: turnData.cuenta_id,
     sucursal_id: turnData.sucursal_id,
     kiosko_id: turnData.kiosko_id,
     cliente_id: turnData.cliente_id,
-    categoria_id: turnData.categoria_id,
+    categoria_id: turnData.categoria_id, // Puede ser null si no seleccionó categoría? Verificar.
     
-    // Datos obligatorios y de estado
-    perfil_prioridad_id: DEFAULT_PRIORITY_ID, 
+    perfil_prioridad_id: DEFAULT_PRIORITY_ID, // ⚠️ ASEGÚRATE QUE ESTE ID EXISTA EN TU BD
     codigo: turnData.codigo,
-    num_sec: Math.floor(Math.random() * 9000) + 1000, 
+    num_sec: Math.floor(Math.random() * 9000) + 1000,
     estado: 'en_espera',
     naturaleza_base: 'regular',
     es_recuperado: false,
-    
-    // Fechas y Tiempos
     emitido_en: now.toISOString(),
-    emitido_dia: now.toISOString().split('T')[0], 
-    tiempo_espera: (turnData.tiempo_espera || 15) * 60, 
+    emitido_dia: now.toISOString().split('T')[0],
+    tiempo_espera: (turnData.tiempo_espera || 15) * 60,
     
-    // Generación simple del hash QR para evitar errores de cálculo
+    // Generamos un hash único para validación interna
     qr_hash: `hash_${Math.random().toString(36).substring(7)}`, 
     qr_expira_en: expires.toISOString(),
   };
 
-  console.log("🚀 ENVIANDO A SUPABASE CON ID:", insertPayload);
-
+  // 4. INSERCIÓN CON DEBUGGING DETALLADO
   const { data, error } = await supabase
     .from('turno')
     .insert([insertPayload])
@@ -176,9 +176,12 @@ export const createTurn = async (turnData: any) => {
     .single();
 
   if (error) {
-    console.error("🔥 Error crítico creando turno:", error);
-    throw error;
+    // Esto imprimirá el error REAL de la base de datos (ej: Key (xxx) is not present in table yyy)
+    console.error("🔥 ERROR CRÍTICO SUPABASE:", JSON.stringify(error, null, 2));
+    throw new Error(`Error BD: ${error.message} - Detalles: ${error.details}`);
   }
+
+  console.log("✅ Turno creado exitosamente en BD:", data);
   return data;
 };
 
