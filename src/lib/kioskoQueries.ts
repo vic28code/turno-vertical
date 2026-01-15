@@ -1,4 +1,13 @@
-import { supabase } from './supabase';
+import supabase from './supabase';
+
+// --- GENERADOR DE ID (UUID) ---
+// Usamos esta función para asegurar que siempre haya un ID, 
+// sin depender del navegador o librerías externas.
+function uuidv4() {
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+    (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> (+c / 4)).toString(16)
+  );
+}
 
 // --- CONSTANTES ---
 const DEFAULT_PRIORITY_ID = '453c0e62-5683-4420-9621-fd07ff06f521'; 
@@ -36,19 +45,6 @@ export interface TurnoPerdidoDB {
     apellidos: string;
     cedula: string;
   };
-}
-
-// --- HELPER: Generador de UUID v4 para el ID del turno ---
-// (Necesario porque tu BD no lo autogenera)
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback para navegadores viejos
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
 }
 
 // --- QUERIES DE LECTURA ---
@@ -118,6 +114,7 @@ export const getTurnoPerdido = async (codigoTurno: string) => {
   if (error) throw error;
   if (!data) return null;
 
+  // Corrección de tipos para TypeScript
   const rawData = data as any; 
   const clienteData = Array.isArray(rawData.cliente) 
     ? rawData.cliente[0] 
@@ -134,29 +131,30 @@ export const getTurnoPerdido = async (codigoTurno: string) => {
 export const createTurn = async (turnData: any) => {
   const now = new Date();
   const expires = new Date(now.getTime() + 2 * 60 * 60 * 1000); 
+  
+  // 1. GENERAMOS EL ID MANUALMENTE
+  const newId = uuidv4();
 
   const insertPayload = {
-    // 1. EL DATO QUE FALTABA: Generamos el ID manualmente
-    id: generateUUID(),
+    // IMPORTANTE: El ID va primero para asegurarnos que está ahí
+    id: newId, 
 
-    // 2. Relaciones
+    // Relaciones
     cuenta_id: turnData.cuenta_id,
     sucursal_id: turnData.sucursal_id,
     kiosko_id: turnData.kiosko_id,
     cliente_id: turnData.cliente_id,
     categoria_id: turnData.categoria_id,
     
-    // 3. Foreign Key obligatoria
+    // Datos obligatorios
     perfil_prioridad_id: DEFAULT_PRIORITY_ID, 
-
-    // 4. Datos del turno
     codigo: turnData.codigo,
     num_sec: Math.floor(Math.random() * 9000) + 1000, 
     estado: 'en_espera',
     naturaleza_base: 'regular',
     es_recuperado: false,
     
-    // 5. Fechas y QR
+    // Fechas y QR
     emitido_en: now.toISOString(),
     emitido_dia: now.toISOString().split('T')[0], 
     tiempo_espera: (turnData.tiempo_espera || 15) * 60, 
@@ -165,7 +163,7 @@ export const createTurn = async (turnData: any) => {
     qr_expira_en: expires.toISOString(),
   };
 
-  console.log("Intentando crear turno con payload:", insertPayload);
+  console.log("🚀 ENVIANDO A SUPABASE CON ID:", insertPayload);
 
   const { data, error } = await supabase
     .from('turno')
@@ -174,7 +172,7 @@ export const createTurn = async (turnData: any) => {
     .single();
 
   if (error) {
-    console.error("Error detallado creando turno:", error);
+    console.error("🔥 Error crítico creando turno:", error);
     throw error;
   }
   return data;
