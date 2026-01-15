@@ -1,273 +1,177 @@
-import { useState, useEffect } from "react";
-import supabase from "@/lib/supabase";
+import { useState } from "react";
 import { WelcomeScreen } from "@/components/screens/WelcomeScreen";
 import { IdInputScreen } from "@/components/screens/IdInputScreen";
+import { RecoverIdInputScreen } from "@/components/screens/RecoverIdInputScreen";
 import { CategorySelectionScreen } from "@/components/screens/CategorySelectionScreen";
 import { SuccessScreen } from "@/components/screens/SuccessScreen";
-import { RecoverIdInputScreen } from "@/components/screens/RecoverIdInputScreen";
+import { createTurn, reactivateTurn, ClienteDB, TurnoPerdidoDB } from "@/lib/kioskoQueries";
+import { useToast } from "@/components/ui/use-toast";
 
-type Screen =
-  | "welcome"
-  | "request-id"
-  | "request-category"
-  | "request-success"
-  | "recover-id"
-  | "recover-turn"
-  | "recover-success";
+// Agregamos el paso intermedio de validación
+type Step = "WELCOME" | "ID_INPUT" | "RECOVER_INPUT" | "RECOVER_VALIDATE" | "CATEGORY" | "SUCCESS";
 
 const Index = () => {
-  const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
-  const [userData, setUserData] = useState<{
-    id?: string | number;
-    category?: string;
-    turnNumber?: string;
-    waitTime?: string;
-    clienteNombre?: string;
-    turnObj?: any;
-    stagedTurns?: any[];
-    recoveredTurn?: any;
-  }>({});
+  const { toast } = useToast();
+  const [step, setStep] = useState<Step>("WELCOME");
+  
+  // Datos del flujo
+  const [currentClient, setCurrentClient] = useState<ClienteDB | null>(null);
+  const [turnToRecover, setTurnToRecover] = useState<TurnoPerdidoDB | null>(null);
+  const [finalTurnData, setFinalTurnData] = useState<any>(null);
+  const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 
-  const [stagedTurns, setStagedTurns] = useState<any[]>([]);
-  const [kioskoIds, setKioskoIds] = useState<number[]>([]);
-  const [recoverIdError, setRecoverIdError] = useState<string | null>(null);
-  const [recoverCedulaError, setRecoverCedulaError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Cargar los kiosko_id disponibles una vez al iniciar la app
-    const loadKioskos = async () => {
-      const { data, error } = await supabase.from("kioskos").select("id");
-      if (!error && data && Array.isArray(data)) {
-        setKioskoIds(data.map((k: any) => k.id));
-      }
-    };
-    loadKioskos();
-  }, []);
-
-  // --- Utilidades ---
-  const generateTurnNumber = () => {
-    const prefix = ["A", "B", "C", "D"][Math.floor(Math.random() * 4)];
-    const number = Math.floor(Math.random() * 9000) + 1000;
-    return `${prefix}${number}`;
+  // --- 1. INICIO ---
+  const handleStartRequest = () => {
+    resetState();
+    setIsRecoveryFlow(false);
+    setStep("ID_INPUT");
   };
 
-  const getRandomKioskoId = () => {
-    if (kioskoIds.length === 0) return null;
-    return kioskoIds[Math.floor(Math.random() * kioskoIds.length)];
+  const handleStartRecover = () => {
+    resetState();
+    setIsRecoveryFlow(true);
+    setStep("RECOVER_INPUT");
   };
 
-  // --- Navegación y manejo de eventos ---
-  const handleRequestTurn = () => setCurrentScreen("request-id");
-  const handleRecoverTurn = () => setCurrentScreen("recover-id");
-  const handleIdSubmit = (id: string) => {
-    setUserData({ ...userData, id });
-    setCurrentScreen("request-category");
+  const handleBackToWelcome = () => {
+    setStep("WELCOME");
   };
 
-  // Recibe de CategorySelectionScreen: staged (turno preparado pero aún no insertado)
-  const handleStageTurn = (staged: any) => {
-    setStagedTurns((prev) => [...prev, staged]);
+  const resetState = () => {
+    setCurrentClient(null);
+    setTurnToRecover(null);
+    setFinalTurnData(null);
   };
 
-  // Finaliza (inserta) todos los turnos acumulados en stagedTurns
-  const handleFinalizeTurns = async () => {
-    if (stagedTurns.length === 0) return;
+  // --- 2. FLUJO SOLICITUD (Cédula -> Categoría -> Crear) ---
+  
+  const handleIdSubmit = (cedula: string, clientData?: ClienteDB) => {
+    if (clientData) {
+      setCurrentClient(clientData);
+      setStep("CATEGORY");
+    }
+  };
 
-    // Genera payloads dinámicamente
-    const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-    const payloads = stagedTurns.map((s) => {
-      const kiosko_id = getRandomKioskoId() ?? 1;
-      // usar valores aleatorios entre 5 y 10 inclusive para ambos tiempos
-      const tiempo_espera = randomBetween(5, 10);
-      const tiempo_atencion = randomBetween(5, 10);
-      const fecha_creacion = new Date().toISOString();
-      return {
-        // Elija sus valores según la estructura SQL
-        numero: generateTurnNumber(),
-        categoria_id: s.categoria_id,
-        sucursal_id: s.sucursal_id ?? 1,
-        kiosko_id,
-        cliente_nombre: s.cliente_nombre ?? `Persona ${Math.floor(Math.random() * 200) + 1}`,
-        cliente_identificacion: s.cliente_identificacion,
-        estado: "pendiente",
-        fecha_creacion,
-        fecha_llamado: new Date(Date.now() + 5 * 60000).toISOString(),
-        fecha_atencion: new Date(Date.now() + 10 * 60000).toISOString(),
-        fecha_finalizacion: new Date(Date.now() + 20 * 60000).toISOString(),
-        tiempo_espera,
-        tiempo_atencion,
-        created_at: fecha_creacion,
-        updated_at: fecha_creacion,
+  const handleCategoryStage = async (stagedData: any) => {
+    try {
+      if (!currentClient) return;
+
+      const payload = {
+        ...stagedData,
+        cliente_id: currentClient.id, 
+        cliente_nombre: `${currentClient.nombres} ${currentClient.apellidos}`
       };
-    });
 
-    try {
-      const { data, error } = await supabase.from("turnos").insert(payloads).select();
-      if (error) {
-        console.error(error);
-        // Usar el primer staged si tabla vacía/falla
-        const first = stagedTurns[0];
-        handleCategoryConfirm({
-          ...first,
-          numero: payloads[0].numero,
-          cliente_nombre: payloads[0].cliente_nombre,
-          tiempo_espera: payloads[0].tiempo_espera,
+      const nuevoTurno = await createTurn(payload);
+
+      if (nuevoTurno) {
+        setFinalTurnData({
+          ...nuevoTurno,
+          categoria_id: payload.categoria_id,
+          cliente_nombre: payload.cliente_nombre
         });
-        return;
+        setStep("SUCCESS");
       }
-      const insertedArray = data as any[];
-      if (insertedArray && insertedArray.length > 0) {
-        const first = insertedArray[0];
-        // Si staged tenía nombre de categoría y estimado, adjúntalo
-        const staged0 = stagedTurns[0];
-        first.categoria_nombre = staged0.categoria_nombre;
-        first.tiempo_espera = staged0.tiempo_estimado ?? first.tiempo_espera;
-        handleCategoryConfirm(first);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setStagedTurns([]);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Error", description: "Error al crear turno." });
     }
   };
 
-  // Confirma un solo turno y navega a SuccessScreen
-  const handleCategoryConfirm = (turn: any) => {
-    setUserData({
-      ...userData,
-      id: turn.id,
-      category: turn.categoria_nombre || userData.category,
-      turnNumber: turn.numero,
-      waitTime: turn.tiempo_espera ? `${turn.tiempo_espera} minutos` : userData.waitTime,
-      clienteNombre: turn.cliente_nombre,
-      turnObj: turn,
-    });
-    setCurrentScreen("request-success");
+  // --- 3. FLUJO RECUPERACIÓN (Código -> Cédula -> Reactivar) ---
+
+  // Paso 3.1: Encuentra el turno por código
+  const handleRecoverCodeFound = (turno: TurnoPerdidoDB) => {
+    setTurnToRecover(turno);
+    // Ahora pedimos la cédula para verificar propiedad
+    setStep("RECOVER_VALIDATE"); 
   };
 
-  // Recuperación de turno por ID
-  const handleRecoverIdSubmit = async (id: string) => {
-    // Buscar el turno por su número en la columna `numero`
-    setRecoverIdError(null);
+  // Paso 3.2: Verifica la cédula y reactiva
+  // Nota: Reutilizamos IdInputScreen, pero con lógica diferente
+  const handleRecoverValidate = async (cedulaIngresada: string) => {
+    if (!turnToRecover) return;
+
+    // VALIDACIÓN LOCAL: ¿La cédula ingresada coincide con la del turno?
+    if (turnToRecover.cliente.cedula !== cedulaIngresada) {
+      toast({
+        variant: "destructive",
+        title: "Datos incorrectos",
+        description: "La cédula ingresada no coincide con el titular del turno.",
+      });
+      return; 
+    }
+
+    // Si coincide, procedemos a reactivar en BD
     try {
-      const { data, error } = await supabase.from("turnos").select("*").eq("numero", id).single();
-      if (error || !data) {
-        setRecoverIdError("No se encontró un turno con ese ID.");
-        return;
+      const turnoActualizado = await reactivateTurn(turnToRecover.id);
+      
+      if (turnoActualizado) {
+        setFinalTurnData({
+          ...turnoActualizado,
+          cliente_nombre: `${turnToRecover.cliente.nombres} ${turnToRecover.cliente.apellidos}`,
+          // Pasamos el ID de categoría para que SuccessScreen busque el nombre del servicio
+          categoria_id: turnoActualizado.categoria_id 
+        });
+        setStep("SUCCESS");
       }
-      if (data.estado !== "perdido") {
-        setRecoverIdError("El turno no está marcado como 'perdido'. No se puede recuperar.");
-        return;
-      }
-
-      // Guardar el turno recuperable temporalmente en userData
-      setUserData({ ...userData, recoveredTurn: data });
-      setRecoverIdError(null);
-      setCurrentScreen("recover-turn");
-    } catch (err) {
-      console.error(err);
-      setRecoverIdError("Error buscando el turno. Intente nuevamente.");
-    }
-  };
-
-  const handleRecoverTurnSubmit = (turnId: string) => {
-    // Aquí `turnId` es en realidad la cédula ingresada en el paso de recuperación
-    setRecoverCedulaError(null);
-    const recovered = (userData as any).recoveredTurn;
-    if (!recovered) {
-      setRecoverCedulaError("No hay un turno seleccionado para recuperar.");
-      return;
-    }
-
-    const cleaned = turnId.replace(/\D/g, "");
-    if (cleaned !== String(recovered.cliente_identificacion)) {
-      setRecoverCedulaError("La cédula no coincide con la del turno.");
-      return;
-    }
-
-    // Coincide: navegar a pantalla de éxito (recovery) mostrando datos del turno
-    setUserData({
-      ...userData,
-      turnNumber: recovered.numero,
-      category: recovered.categoria_nombre ?? userData.category,
-      waitTime: recovered.tiempo_espera ? `${recovered.tiempo_espera} minutos` : userData.waitTime,
-      clienteNombre: recovered.cliente_nombre,
-      turnObj: recovered,
-    });
-    setCurrentScreen("recover-success");
-  };
-
-  const handleFinish = () => {
-    setUserData({});
-    setCurrentScreen("welcome");
-  };
-
-  const handleBack = () => {
-    switch (currentScreen) {
-      case "request-id":
-        setCurrentScreen("welcome");
-        break;
-      case "request-category":
-        setCurrentScreen("request-id");
-        break;
-      case "recover-id":
-        setCurrentScreen("welcome");
-        break;
-      case "recover-turn":
-        setCurrentScreen("recover-id");
-        break;
-      default:
-        setCurrentScreen("welcome");
+    } catch (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo reactivar el turno." });
     }
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {currentScreen === "welcome" && (
-        <WelcomeScreen
-          onRequestTurn={handleRequestTurn}
-          onRecoverTurn={handleRecoverTurn}
+    <div className="min-h-screen bg-background font-sans text-foreground">
+      
+      {step === "WELCOME" && (
+        <WelcomeScreen 
+          onRequestTurn={handleStartRequest}
+          onRecoverTurn={handleStartRecover}
         />
       )}
-      {currentScreen === "request-id" && (
-        <IdInputScreen onBack={handleBack} onSubmit={handleIdSubmit} useKeypad={true} />
-      )}
-      {currentScreen === "request-category" && (
-        <CategorySelectionScreen
-          onBack={handleBack}
-          onStage={handleStageTurn}
-          onFinalize={handleFinalizeTurns}
-          clienteIdentificacion={String(userData.id ?? userData.id)}
+
+      {/* CASO A: SOLICITAR TURNO NUEVO */}
+      {step === "ID_INPUT" && (
+        <IdInputScreen 
+          onBack={handleBackToWelcome}
+          onSubmit={handleIdSubmit}
         />
       )}
-      {currentScreen === "request-success" && (
-        <SuccessScreen
-          turn={userData.turnObj}
-          turnNumber={userData.turnNumber || ""}
-          category={userData.category || ""}
-          waitTime={userData.waitTime}
-          onFinish={handleFinish}
+
+      {/* CASO B1: RECUPERAR - INGRESAR CÓDIGO */}
+      {step === "RECOVER_INPUT" && (
+        <RecoverIdInputScreen 
+          onBack={handleBackToWelcome}
+          onSubmit={handleRecoverCodeFound}
         />
       )}
-      {currentScreen === "recover-id" && (
-        <RecoverIdInputScreen onBack={handleBack} onSubmit={handleRecoverIdSubmit} useKeypad={true} error={recoverIdError} />
-      )}
-      {currentScreen === "recover-turn" && (
-        <IdInputScreen
-          onBack={handleBack}
-          onSubmit={handleRecoverTurnSubmit}
-          title="RECUPERE SU TURNO"
-          subtitle="Puedes recuperar un turno siempre y cuando cuentes con tu cédula configurada"
-          useKeypad={true}
-          error={recoverCedulaError}
+
+      {/* CASO B2: RECUPERAR - VALIDAR CÉDULA */}
+      {step === "RECOVER_VALIDATE" && (
+        <IdInputScreen 
+          onBack={() => setStep("RECOVER_INPUT")}
+          // Aquí pasamos una función inline porque IdInputScreen espera (cedula, objeto), 
+          // pero aquí solo nos importa la cédula string para comparar.
+          onSubmit={(cedula) => handleRecoverValidate(cedula)}
+          title="VERIFICACIÓN DE IDENTIDAD"
+          subtitle="Para reactivar su turno, confirme su número de cédula"
         />
       )}
-      {currentScreen === "recover-success" && (
-        <SuccessScreen
-          turn={userData.turnObj}
-          turnNumber={userData.turnNumber || ""}
-          onFinish={handleFinish}
-          isRecovery={true}
+
+      {step === "CATEGORY" && (
+        <CategorySelectionScreen 
+          onBack={() => setStep("ID_INPUT")}
+          clienteIdentificacion={currentClient?.cedula}
+          onStage={handleCategoryStage}
+          onFinalize={() => {}}
+        />
+      )}
+
+      {step === "SUCCESS" && finalTurnData && (
+        <SuccessScreen 
+          turnNumber={finalTurnData.codigo}
+          turn={finalTurnData}
+          isRecovery={isRecoveryFlow}
+          onFinish={handleBackToWelcome}
         />
       )}
     </div>

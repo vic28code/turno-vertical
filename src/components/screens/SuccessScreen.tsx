@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KioskLayout } from "@/components/KioskLayout";
 import supabase from "@/lib/supabase";
-// 1. IMPORTAMOS LA LIBRERÍA AQUÍ
 import { QRCodeSVG } from 'qrcode.react';
 
 interface SuccessScreenProps {
@@ -11,132 +10,156 @@ interface SuccessScreenProps {
   isRecovery?: boolean;
   category?: string;
   waitTime?: string;
-  turn?: any;
+  turn?: any; // Puede ser el objeto 'staged' o el objeto de DB completo
 }
 
 export const SuccessScreen = ({
   turnNumber,
   onFinish,
   isRecovery = false,
-  category = "Caja 1",
-  waitTime = "2 horas, 5 minutos",
+  category = "Atención General",
+  waitTime = "Espere...",
   turn,
 }: SuccessScreenProps) => {
   const [categoryName, setCategoryName] = useState<string>(category);
   const [waitTimeLocal, setWaitTimeLocal] = useState<string>(waitTime);
-  const [clienteNombre, setClienteNombre] = useState<string | undefined>(turn?.cliente_nombre);
+  const [clienteNombre, setClienteNombre] = useState<string>("");
 
-  const naturaleza = turn?.naturaleza ?? "Turno Regular";
-  const displayedTurnNumber = turn?.numero ?? turnNumber;
+  // 1. ADAPTACIÓN DE DATOS (Manejo de nombres nuevos y viejos)
+  // En tu nueva BD es 'codigo', en el objeto staged anterior era 'numero'
+  const displayedTurnNumber = turn?.codigo ?? turn?.numero ?? turnNumber;
   
-  const horaEmision = turn?.fecha_creacion
-      ? new Date(turn.fecha_creacion).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
-      : new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-      
-  const fechaEmision = turn?.fecha_creacion
-      ? new Date(turn.fecha_creacion).toLocaleDateString("es-ES")
-      : new Date().toLocaleDateString("es-ES");
+  // En tu nueva BD es 'emitido_en', fallback a fecha actual
+  const fechaRaw = turn?.emitido_en ?? turn?.fecha_creacion ?? new Date().toISOString();
+  
+  // Formateo de fechas
+  const horaEmision = new Date(fechaRaw).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const fechaEmision = new Date(fechaRaw).toLocaleDateString("es-ES");
 
-  // Esta URL es lo que contendrá el QR. Es única por cada turno.
+  // Detectar nombre del cliente (si viene del objeto recuperado o staged)
+  // La query de recuperar trae: cliente: { nombres, apellidos }
+  const nombreClienteDisplay = turn?.cliente?.nombres 
+    ? `${turn.cliente.nombres} ${turn.cliente.apellidos || ''}`
+    : turn?.cliente_nombre || "Usuario";
+
+  // URL Real para el QR
   const consultaUrl = `https://interfaz-usuario-mu.vercel.app/consulta-turno-${displayedTurnNumber}`;
 
   useEffect(() => {
-    const loadCategory = async () => {
+    const loadCategoryData = async () => {
       try {
+        // Si tenemos el ID de categoría, buscamos sus datos frescos
         if (turn && turn.categoria_id) {
           const { data, error } = await supabase
-            .from("categorias")
-            .select("nombre,tiempo_estimado")
+            .from("categoria") // Tabla singular
+            .select("nombre, tiempo_prom_seg")
             .eq("id", turn.categoria_id)
             .single();
+
           if (!error && data) {
             setCategoryName(data.nombre || category);
-            if (data.tiempo_estimado) setWaitTimeLocal(`${data.tiempo_estimado} minutos`);
+            
+            // Conversión de Segundos a Minutos
+            if (data.tiempo_prom_seg) {
+              const mins = Math.ceil(data.tiempo_prom_seg / 60);
+              setWaitTimeLocal(`${mins} minutos aprox.`);
+            }
           }
         }
-        if (turn && turn.cliente_nombre) {
-          setClienteNombre(turn.cliente_nombre);
-        }
       } catch (err) {
-        console.error("Error cargando categoría para SuccessScreen:", err);
+        console.error("Error cargando info extra del turno:", err);
       }
     };
-    loadCategory();
+    loadCategoryData();
   }, [turn, category]);
 
+  // Timer para auto-cerrar la pantalla a los 15 segundos
   useEffect(() => {
     const timer = setTimeout(() => {
       onFinish();
-    }, 10000);
+    }, 15000); // 15 segundos es un buen tiempo para escanear
     return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
-    <KioskLayout showBack={false}>
-      <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-10">
+    <KioskLayout onBack={onFinish} showBack={false}> {/* showBack false para obligar a salir por el botón grande */}
+      <div className="flex flex-col items-center justify-center min-h-[75vh] w-full max-w-4xl mx-auto space-y-8 px-4">
         
-        {/* ... (Tus encabezados de ÉXITO se mantienen igual) ... */}
-        <div>
-          <h1 className="text-5xl font-bold mb-2">{isRecovery ? "RECUPERADO" : "ÉXITO"}</h1>
-          <div className="bg-muted text-xl rounded-2xl py-3 px-8 mt-2 shadow">
-            Su turno se ha generado correctamente,<br />revise por favor
-          </div>
+        {/* Encabezado */}
+        <div className="text-center space-y-2">
+          <h1 className="text-5xl md:text-6xl font-black tracking-tight text-slate-900">
+            {isRecovery ? "¡TURNO REACTIVADO!" : "¡ÉXITO!"}
+          </h1>
+          <p className="text-2xl text-slate-500 font-medium">
+            Hola <span className="text-blue-600 font-bold">{nombreClienteDisplay}</span>, su turno está listo.
+          </p>
         </div>
 
-        {/* Turno principal */}
-        <div className="bg-card rounded-2xl shadow-lg py-8 px-4 max-w-lg w-full mb-2">
-          <div className="text-2xl font-medium mb-4">Su turno es:</div>
-          <div className="text-7xl font-bold text-kiosk-primary mb-6">{displayedTurnNumber}</div>
-
-          <div className="flex flex-row justify-between text-lg mb-6">
-            <div className="text-left">
-              <div><span className="font-semibold">Turno para:</span> {categoryName}</div>
-              <div><span className="font-semibold">Fecha de emisión:</span> {fechaEmision}</div>
-              <div><span className="font-semibold">Hora de emisión:</span> {horaEmision}</div>
-              <div><span className="font-semibold">Naturaleza:</span> {naturaleza}</div>
-            </div>
-            <div className="text-right">
-              <div className="font-semibold mb-2">Tiempo restante aproximado<br />para ser atendido:</div>
-              <span className="text-blue-700 font-bold">{waitTimeLocal}</span>
-              <br />
-              <span className="text-muted-foreground text-xs">(Basado en estimaciones promedio)</span>
+        {/* Tarjeta Principal */}
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-slate-100 overflow-hidden w-full max-w-2xl">
+          
+          {/* Parte Superior: El Número Gigante */}
+          <div className="bg-slate-50 p-8 text-center border-b border-slate-100">
+            <p className="text-lg uppercase tracking-widest text-slate-400 font-bold mb-2">Su turno es</p>
+            <div className="text-8xl md:text-9xl font-black text-blue-600 tracking-tighter">
+              {displayedTurnNumber}
             </div>
           </div>
 
-          {/* 2. AQUÍ RENDERIZAMOS EL QR REAL */}
-          <div className="my-5 text-center">
-            <div className="mb-3 text-base font-medium">
-              Consulte el estado y tiempo aproximado<br />
-              de atención de su turno escaneando este QR
-            </div>
-            <div className="flex items-center justify-center mb-3">
-              <div className="bg-white rounded-lg shadow p-4"> {/* Agregué p-4 para margen blanco */}
-                
-                <QRCodeSVG 
-                    value={consultaUrl} 
-                    size={180}
-                    level={"H"} // Alta corrección de errores
-                    includeMargin={false} // El margen ya lo da el div contenedor
-                    fgColor={"#000000"}
-                    bgColor={"#ffffff"}
-                />
-
+          {/* Información Detallada */}
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+            
+            {/* Lado Izquierdo: Datos */}
+            <div className="space-y-4 text-left">
+              <div>
+                <p className="text-xs text-slate-400 uppercase font-bold">Servicio</p>
+                <p className="text-xl font-bold text-slate-800">{categoryName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 uppercase font-bold">Tiempo Estimado</p>
+                <p className="text-xl font-bold text-slate-800">{waitTimeLocal}</p>
+              </div>
+              <div className="flex gap-4">
+                <div>
+                  <p className="text-xs text-slate-400 uppercase font-bold">Fecha</p>
+                  <p className="text-lg font-medium text-slate-700">{fechaEmision}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 uppercase font-bold">Hora</p>
+                  <p className="text-lg font-medium text-slate-700">{horaEmision}</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-2 text-center text-base text-muted-foreground">
-            También puedes consultar tu turno ingresando a: <br />
-            <span className="text-red-700 font-medium break-all">{consultaUrl}</span>
+            {/* Lado Derecho: QR */}
+            <div className="flex flex-col items-center justify-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <QRCodeSVG 
+                value={consultaUrl} 
+                size={160}
+                level={"H"}
+                className="mb-3"
+              />
+              <p className="text-xs text-center text-slate-500 font-medium leading-tight">
+                Escanee para ver<br/>su posición en fila
+              </p>
+            </div>
+
+          </div>
+          
+          {/* Footer de la tarjeta con link texto */}
+          <div className="bg-slate-900 text-slate-300 py-3 px-6 text-center text-xs md:text-sm font-mono break-all">
+            {consultaUrl}
           </div>
         </div>
 
+        {/* Botón Salir */}
         <Button
           onClick={onFinish}
-          className="w-48 h-12 text-lg font-semibold bg-muted text-black rounded-full shadow-lg mt-6"
+          className="w-64 h-16 text-2xl font-bold rounded-full shadow-lg bg-slate-200 hover:bg-slate-300 text-slate-800 transition-all active:scale-95"
         >
-          Salir
+          Finalizar
         </Button>
+
       </div>
     </KioskLayout>
   );

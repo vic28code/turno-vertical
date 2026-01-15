@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KioskLayout } from "@/components/KioskLayout";
-import supabase from "@/lib/supabase";
+// Importamos las queries separadas
+import { getCategories, getKioskos } from "@/lib/kioskoQueries";
 
 interface CategorySelectionScreenProps {
   onBack: () => void;
@@ -10,49 +11,28 @@ interface CategorySelectionScreenProps {
   clienteIdentificacion?: string;
 }
 
-// --- Funciones auxiliares para campos generados ---
-const randomInt = (min: number, max: number) =>
-  Math.floor(Math.random() * (max - min + 1)) + min;
+// Interfaz de UI adaptada (IDs ahora son strings UUID)
+interface CategoryUI {
+  id: string; 
+  cuenta_id: string; // Necesario para el turno
+  nombre: string;
+  descripcion?: string;
+  tiempo_estimado?: number;
+  color?: string;
+}
 
-const randomCode = (length: number) => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let result = "";
-  for (let i = 0; i < length; i++) {
-    result += chars[randomInt(0, chars.length - 1)];
-  }
-  return result;
+interface KioskoUI {
+  id: string;
+  sucursal_id: string;
+}
+
+// Helpers visuales
+const randomCode = () => {
+  const letters = "ABC";
+  const letter = letters[Math.floor(Math.random() * letters.length)];
+  const num = Math.floor(Math.random() * 900) + 100;
+  return `${letter}-${num}`;
 };
-
-const nowIso = () => new Date().toISOString();
-const addMinutes = (date: Date, mins: number) => {
-  const copy = new Date(date);
-  copy.setMinutes(copy.getMinutes() + mins);
-  return copy.toISOString();
-};
-
-const nombres = [
-  "Juan Pérez",
-  "Ana Torres",
-  "Pedro Gómez",
-  "María Reyes",
-  "Luis Fernández",
-  "Carmen Rodríguez",
-  "José Ramírez",
-  "Sofía Morales",
-  "Andrés Castillo",
-  "Laura Herrera",
-  "Miguel Vargas",
-  "Valentina López",
-  "Diego Cruz",
-  "Gabriela Mendoza",
-  "Ricardo Salazar",
-  "Isabella Torres",
-  "Carlos Navarro",
-  "Daniela Rojas",
-  "Fernando Ortiz",
-  "Lucía Castro",
-];
-
 
 export const CategorySelectionScreen = ({
   onBack,
@@ -60,91 +40,78 @@ export const CategorySelectionScreen = ({
   onFinalize,
   clienteIdentificacion,
 }: CategorySelectionScreenProps) => {
-  const [categories, setCategories] = useState<
-    Array<{ id: number; nombre: string; descripcion?: string; color?: string; tiempo_estimado?: number; sucursal_id?: number }>
-  >([]);
-  const [kioskos, setKioskos] = useState<Array<{ id: number }>>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+  
+  const [categories, setCategories] = useState<CategoryUI[]>([]);
+  const [kioskos, setKioskos] = useState<KioskoUI[]>([]); 
+  const [selected, setSelected] = useState<string | null>(null); // UUID es string
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
-      const { data: catData, error: catError } = await supabase
-        .from("categorias")
-        .select("id,nombre,descripcion,color,tiempo_estimado,sucursal_id")
-        .order("id");
-      if (catError) {
-        setError("No se pudieron cargar las categorías");
-        console.error(catError);
-        return;
-      }
-      setCategories((catData as any) || []);
+      try {
+        setLoading(true);
+        // 1. Cargar Categorías
+        const cats = await getCategories();
+        setCategories(cats);
 
-      // Cargar los kiosko_id al iniciar
-      const { data: kioskoData, error: kioskoError } = await supabase
-        .from("kioskos")
-        .select("id");
-      if (kioskoError) {
-        setError("No se pudieron cargar los kioskos");
-        console.error(kioskoError);
-        return;
+        // 2. Cargar Kioskos (para obtener la sucursal correcta)
+        const kioskList = await getKioskos();
+        setKioskos(kioskList);
+        
+        setLoading(false);
+      } catch (err: any) {
+        console.error(err);
+        setError("Error de conexión con la base de datos.");
+        setLoading(false);
       }
-      setKioskos((kioskoData as any) || []);
     };
     load();
   }, []);
 
-  // Número de turno tipo "A1234"
-  const generateTurnNumber = () => {
-    const prefix = ["A", "B", "C", "D"][Math.floor(Math.random() * 4)];
-    const number = Math.floor(Math.random() * 9000) + 1000;
-    return `${prefix}${number}`;
-  };
-
-  // --- Seleccionar un kiosko_id aleatorio de la lista ---
-  const getRandomKioskoId = () => {
+  // Seleccionar un kiosko al azar (simulando que este dispositivo es uno de ellos)
+  const getRandomKiosko = () => {
     if (kioskos.length === 0) return null;
     const randomIndex = Math.floor(Math.random() * kioskos.length);
-    return kioskos[randomIndex].id;
+    return kioskos[randomIndex];
   };
 
   const stageCurrent = () => {
     if (!clienteIdentificacion) {
-      setError("Identificación de cliente faltante.");
+      setError("Falta identificación del cliente.");
       return;
     }
-    if (selected == null) {
+    if (!selected) {
       setError("Selecciona una categoría.");
       return;
     }
+    
     setError(null);
     const cat = categories.find((c) => c.id === selected);
-    if (!cat) {
-      setError("Categoría seleccionada inválida.");
+    const currentKiosko = getRandomKiosko();
+
+    if (!cat || !currentKiosko) {
+      setError("Error de configuración (Falta Kiosko o Categoría).");
       return;
     }
-    const kiosko_id = getRandomKioskoId();
-
-    const fechaBase = new Date();
+    
+    // Construimos el objeto STAGED con los datos REALES para el insert posterior
     const staged = {
-      idx: randomInt(0, 1000),
-      id: randomInt(1, 1000000),
-      numero: generateTurnNumber(),
-      categoria_id: cat?.id,
-      sucursal_id: cat?.sucursal_id ?? null,
-      kiosko_id, // ← Aquí se asocia el kiosko seleccionado al azar
-      cliente_nombre: nombres[randomInt(0, nombres.length - 1)],
-      cliente_identificacion: clienteIdentificacion,
-      estado: "pendiente",
-      fecha_creacion: fechaBase.toISOString(),
-      fecha_llamado: addMinutes(fechaBase, 5),
-      fecha_atencion: addMinutes(fechaBase, 10),
-      fecha_finalizacion: addMinutes(fechaBase, 20),
-      tiempo_espera: 10,
-      tiempo_atencion: 5,
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      // Datos Relacionales (IDs reales de tu BDD)
+      categoria_id: cat.id,
+      cuenta_id: cat.cuenta_id,         // Dato nuevo requerido
+      sucursal_id: currentKiosko.sucursal_id, // Dato nuevo requerido (viene del kiosko)
+      kiosko_id: currentKiosko.id,
+      
+      // Datos del Turno
+      cliente_identificacion: clienteIdentificacion, 
+      codigo: randomCode(),             // Visual temporal
+      categoria_nombre: cat.nombre,
+      tiempo_espera: cat.tiempo_estimado, 
+      
+      // Fechas
+      fecha_creacion: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     };
 
     onStage?.(staged);
@@ -161,39 +128,59 @@ export const CategorySelectionScreen = ({
         <div className="text-center">
           <h1 className="kiosk-title">SOLICITUD DE NUEVO TURNO</h1>
           <p className="kiosk-subtitle">
-            Seleccione una categoría para la cual desea obtener un turno
+            Seleccione una categoría para continuar
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 max-w-3xl mx-auto">
+        {/* Grid de Categorías */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {categories.map((category) => {
             const isSelected = selected === category.id;
             return (
               <button
                 key={category.id}
                 onClick={() => setSelected(category.id)}
-                className={`h-48 text-2xl font-bold rounded-xl shadow-md focus:outline-none p-4 ${isSelected
-                    ? "bg-kiosk-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                  }`}
+                className={`
+                  relative h-48 rounded-2xl shadow-sm border-2 transition-all duration-200
+                  flex flex-col items-center justify-center p-6 gap-2
+                  ${isSelected
+                    ? "bg-blue-600 text-white border-blue-600 scale-105 shadow-xl"
+                    : "bg-white text-slate-700 border-slate-100 hover:border-blue-300 hover:bg-slate-50"
+                  }
+                `}
               >
-                {category.nombre}
+                <span className="text-3xl font-bold tracking-tight">{category.nombre}</span>
+                {category.descripcion && (
+                   <span className={`text-sm ${isSelected ? "text-blue-200" : "text-slate-400"}`}>
+                     {category.descripcion}
+                   </span>
+                )}
+                {category.tiempo_estimado && (
+                  <div className={`
+                    absolute bottom-4 px-3 py-1 rounded-full text-xs font-semibold
+                    ${isSelected ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-500"}
+                  `}>
+                    ⏱ {category.tiempo_estimado} min aprox
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
 
-        {error ? (
-          <p className="text-center text-destructive">{error}</p>
-        ) : null}
+        {error && (
+          <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center font-medium max-w-md mx-auto border border-red-100">
+            {error}
+          </div>
+        )}
 
-        <div className="max-w-3xl mx-auto text-center">
+        <div className="max-w-md mx-auto pt-8">
           <Button
             onClick={handleConfirm}
-            disabled={loading || selected == null}
-            className="w-full h-16 text-2xl font-bold bg-kiosk-primary text-primary-foreground rounded-2xl"
+            disabled={loading || !selected}
+            className="w-full h-16 text-xl font-bold rounded-xl shadow-lg bg-blue-600 hover:bg-blue-700 transition-colors"
           >
-            {loading ? "Creando turno..." : "Confirmar turno"}
+            {loading ? "Cargando..." : "Confirmar Turno"}
           </Button>
         </div>
       </div>
