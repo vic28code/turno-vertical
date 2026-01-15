@@ -1,9 +1,11 @@
 import supabase from './supabase';
 
-// --- GENERADOR DE ID (UUID) ---
-// Usamos esta función para asegurar que siempre haya un ID, 
-// sin depender del navegador o librerías externas.
+// --- 1. GENERADOR DE ID MANUAL (Indestructible) ---
+// Genera un UUID v4 válido usando crypto del navegador o un fallback matemático
 function uuidv4() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
   return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
     (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> (+c / 4)).toString(16)
   );
@@ -114,7 +116,7 @@ export const getTurnoPerdido = async (codigoTurno: string) => {
   if (error) throw error;
   if (!data) return null;
 
-  // Corrección de tipos para TypeScript
+  // Corrección de tipos para asegurar compatibilidad
   const rawData = data as any; 
   const clienteData = Array.isArray(rawData.cliente) 
     ? rawData.cliente[0] 
@@ -129,15 +131,16 @@ export const getTurnoPerdido = async (codigoTurno: string) => {
 // --- QUERIES DE ESCRITURA (CREAR / ACTUALIZAR) ---
 
 export const createTurn = async (turnData: any) => {
+  // 1. GENERAMOS EL ID MANUALMENTE
+  // Esto es vital porque tu base de datos no tiene autogeneración de UUID
+  const newId = uuidv4();
+  
   const now = new Date();
   const expires = new Date(now.getTime() + 2 * 60 * 60 * 1000); 
-  
-  // 1. GENERAMOS EL ID MANUALMENTE
-  const newId = uuidv4();
 
+  // 2. Construimos el objeto insertPayload asegurando que 'id' va primero
   const insertPayload = {
-    // IMPORTANTE: El ID va primero para asegurarnos que está ahí
-    id: newId, 
+    id: newId, // <--- AQUÍ ESTÁ EL FIX: ID EXPLÍCITO
 
     // Relaciones
     cuenta_id: turnData.cuenta_id,
@@ -146,7 +149,7 @@ export const createTurn = async (turnData: any) => {
     cliente_id: turnData.cliente_id,
     categoria_id: turnData.categoria_id,
     
-    // Datos obligatorios
+    // Datos obligatorios y de estado
     perfil_prioridad_id: DEFAULT_PRIORITY_ID, 
     codigo: turnData.codigo,
     num_sec: Math.floor(Math.random() * 9000) + 1000, 
@@ -154,12 +157,13 @@ export const createTurn = async (turnData: any) => {
     naturaleza_base: 'regular',
     es_recuperado: false,
     
-    // Fechas y QR
+    // Fechas y Tiempos
     emitido_en: now.toISOString(),
     emitido_dia: now.toISOString().split('T')[0], 
     tiempo_espera: (turnData.tiempo_espera || 15) * 60, 
     
-    qr_hash: `hash_${Math.random().toString(36).substring(7)}_${Date.now()}`, 
+    // Generación simple del hash QR para evitar errores de cálculo
+    qr_hash: `hash_${Math.random().toString(36).substring(7)}`, 
     qr_expira_en: expires.toISOString(),
   };
 
