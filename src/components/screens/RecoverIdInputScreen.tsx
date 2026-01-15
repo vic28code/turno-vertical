@@ -72,7 +72,9 @@ export const RecoverIdInputScreen = ({
       } else {
         setError("Turno no encontrado o no está en estado 'perdido'.");
       }
+    // En RecoverIdInputScreen.tsx dentro de handleSubmit
     } catch (err) {
+      console.error("🔥 Error al recuperar turno:", err); // AGREGA ESTO
       setError("Error de conexión. Intente nuevamente.");
     } finally {
       setLoading(false);

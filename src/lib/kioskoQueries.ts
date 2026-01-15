@@ -97,37 +97,44 @@ export const getClienteByCedula = async (cedula: string) => {
   return data as ClienteDB | null;
 };
 
+// En kioskoQueries.ts
+
 export const getTurnoPerdido = async (codigoTurno: string) => {
   const codigo = codigoTurno.toUpperCase().trim();
 
-  const { data, error } = await supabase
+  // PASO 1: Buscar el turno
+  // Agregamos .limit(1) para solucionar el error de duplicados
+  const { data: turno, error: errorTurno } = await supabase
     .from('turno')
-    .select(`
-      id, 
-      codigo, 
-      estado, 
-      cliente_id,
-      cliente:cliente_id ( nombres, apellidos, cedula )
-    `)
+    .select('id, codigo, estado, cliente_id')
     .eq('codigo', codigo)
-    .eq('estado', 'perdido') 
+    .eq('estado', 'perdido')
+    .order('emitido_en', { ascending: false }) // IMPORTANTE: Toma el más reciente
+    .limit(1)                                  // IMPORTANTE: Fuerza a traer solo uno y evita el error PGRST116
     .maybeSingle();
 
-  if (error) throw error;
-  if (!data) return null;
+  if (errorTurno) {
+    console.error("Error buscando turno base:", errorTurno);
+    throw errorTurno;
+  }
+  
+  if (!turno) return null;
 
-  // Corrección de tipos para asegurar compatibilidad
-  const rawData = data as any; 
-  const clienteData = Array.isArray(rawData.cliente) 
-    ? rawData.cliente[0] 
-    : rawData.cliente;
+  // PASO 2: Buscar cliente (igual que antes)
+  let clienteData = { nombres: 'Desconocido', apellidos: '', cedula: '' };
 
-  return {
-    ...rawData,
-    cliente: clienteData || { nombres: 'Desconocido', apellidos: '', cedula: '' }
-  } as TurnoPerdidoDB;
+  if (turno.cliente_id) {
+    const { data: cliente } = await supabase
+      .from('cliente')
+      .select('nombres, apellidos, cedula')
+      .eq('id', turno.cliente_id)
+      .maybeSingle();
+      
+    if (cliente) clienteData = cliente;
+  }
+
+  return { ...turno, cliente: clienteData } as TurnoPerdidoDB;
 };
-
 // --- QUERIES DE ESCRITURA (CREAR / ACTUALIZAR) ---
 
 export const createTurn = async (turnData: any) => {
