@@ -38,7 +38,7 @@ export const SuccessScreen = ({
       : new Date().toLocaleDateString("es-ES");
 
   // Esta URL es lo que contendrá el QR. Es única por cada turno.
-  const consultaUrl = `https://www.sacodeturnero.com/consulta-turno-${displayedTurnNumber}`;
+  const consultaUrl = `https://interfaz-usuario-mu.vercel.app/consulta-turno-${displayedTurnNumber}`;
 
   useEffect(() => {
     const loadCategory = async () => {
