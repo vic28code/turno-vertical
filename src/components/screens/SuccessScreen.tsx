@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KioskLayout } from "@/components/KioskLayout";
 import supabase from "@/lib/supabase";
-
-// Si tienes un componente para mostrar el QR, úsalo aquí
-// import { QRCode } from "@/components/QRCode";
+// 1. IMPORTAMOS LA LIBRERÍA AQUÍ
+import { QRCodeSVG } from 'qrcode.react';
 
 interface SuccessScreenProps {
   turnNumber: string;
@@ -27,23 +26,21 @@ export const SuccessScreen = ({
   const [waitTimeLocal, setWaitTimeLocal] = useState<string>(waitTime);
   const [clienteNombre, setClienteNombre] = useState<string | undefined>(turn?.cliente_nombre);
 
-  // Si tienes un campo para la naturaleza del turno, úsalo. Aquí fijo como "Turno Regular".
   const naturaleza = turn?.naturaleza ?? "Turno Regular";
   const displayedTurnNumber = turn?.numero ?? turnNumber;
-  const horaEmision =
-    turn?.fecha_creacion
+  
+  const horaEmision = turn?.fecha_creacion
       ? new Date(turn.fecha_creacion).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
       : new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-  const fechaEmision =
-    turn?.fecha_creacion
+      
+  const fechaEmision = turn?.fecha_creacion
       ? new Date(turn.fecha_creacion).toLocaleDateString("es-ES")
       : new Date().toLocaleDateString("es-ES");
 
-  // Enlace dinámico para el turno, reemplaza por tu dominio y el formato de número real
+  // Esta URL es lo que contendrá el QR. Es única por cada turno.
   const consultaUrl = `https://www.sacodeturnero.com/consulta-turno-${displayedTurnNumber}`;
 
   useEffect(() => {
-    // Si recibimos la info completa de la BD, la mostramos
     const loadCategory = async () => {
       try {
         if (turn && turn.categoria_id) {
@@ -77,7 +74,8 @@ export const SuccessScreen = ({
   return (
     <KioskLayout showBack={false}>
       <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-10">
-        {/* Éxito + mensaje */}
+        
+        {/* ... (Tus encabezados de ÉXITO se mantienen igual) ... */}
         <div>
           <h1 className="text-5xl font-bold mb-2">{isRecovery ? "RECUPERADO" : "ÉXITO"}</h1>
           <div className="bg-muted text-xl rounded-2xl py-3 px-8 mt-2 shadow">
@@ -105,26 +103,31 @@ export const SuccessScreen = ({
             </div>
           </div>
 
-          {/* QR e instrucciones */}
+          {/* 2. AQUÍ RENDERIZAMOS EL QR REAL */}
           <div className="my-5 text-center">
             <div className="mb-3 text-base font-medium">
               Consulte el estado y tiempo aproximado<br />
               de atención de su turno escaneando este QR
             </div>
             <div className="flex items-center justify-center mb-3">
-              {/* Aquí deberías reemplazar por tu componente real de QR */}
-              <div className="bg-white rounded-lg shadow p-2">
-                {/* <QRCode value={consultaUrl} size={180} /> */}
-                <div className="w-40 h-40 bg-muted flex items-center justify-center rounded-lg">
-                  <span className="text-2xl text-muted-foreground">QR</span>
-                </div>
+              <div className="bg-white rounded-lg shadow p-4"> {/* Agregué p-4 para margen blanco */}
+                
+                <QRCodeSVG 
+                    value={consultaUrl} 
+                    size={180}
+                    level={"H"} // Alta corrección de errores
+                    includeMargin={false} // El margen ya lo da el div contenedor
+                    fgColor={"#000000"}
+                    bgColor={"#ffffff"}
+                />
+
               </div>
             </div>
           </div>
 
           <div className="mt-2 text-center text-base text-muted-foreground">
             También puedes consultar tu turno ingresando a: <br />
-            <span className="text-red-700 font-medium">{consultaUrl}</span>
+            <span className="text-red-700 font-medium break-all">{consultaUrl}</span>
           </div>
         </div>
 
